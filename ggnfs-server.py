@@ -10,16 +10,18 @@ parser = argparse.ArgumentParser(prog = "ggnfs-server", description = "A server 
 
 parser.add_argument("-h", action = "help", help = "Display this menu and exit.")
 parser.add_argument("-v", action = "version", help = "Display the program's version and exit.", version = VERSION + ".")
-parser.add_argument("-l", dest = "logfiles", help = "The files to store the server logs.", metavar = "logs", nargs = "+", required = True)
-parser.add_argument("-f", dest = "fs", help = "The filesystem images for clients to edit.", metavar = "imgs", nargs = "+", required = True)
-parser.add_argument("-n", dest = "names", help = "The names of the corresponding filesystems.", metavar = "names", nargs = "+", required = True)
-parser.add_argument("-s", action = "store_true", dest = "safe", help = "Whether the GGNFS server should abort upon warnings.")
-parser.add_argument("-q", action = "store_true", dest = "quiet", help = "Whether the GGNFS server shouldn't print logs to the screen.")
+parser.add_argument("-l", nargs = "+", required = True, help = "The files to store the server logs.", metavar = "logs", dest = "logfiles")
+parser.add_argument("-f", nargs = "+", required = True, help = "The filesystem images for clients to edit.", metavar = "imgs", dest = "fs")
+parser.add_argument("-n", nargs = "+", required = True, help = "The names of the corresponding filesystems.", metavar = "names", dest = "names")
+parser.add_argument("-s", action = "store_true", help = "Whether the GGNFS server should abort upon warnings.", dest = "safe")
+parser.add_argument("-q", action = "store_true", help = "Whether the GGNFS server shouldn't print logs to the screen.", dest = "quiet")
+parser.add_argument("-p", default = 43690, help = "What port the server should run on; default 43690.", dest = "port")
 
 args = parser.parse_args()
 
 mlf = args.logfiles[0]
 quiet = args.quiet
+port = args.port
 
 if len(args.logfiles) != len(args.fs)+1 or len(args.logfiles) != len(args.names)+1:
   error(f"There must be one more logfile than filesystems, as the first logfile is used for storing logs for the server itself.", mlf)
@@ -49,8 +51,33 @@ for k in range(len(args.fs)):
 log_header("All disk images correct", quiet, mlf)
 
 log_header("Initializing GGNFS server", quiet, mlf)
-log_content(f"Listening on {sip}:43690.", quiet, mlf)
+
+client_ips = []
+client_ports = []
+client_uids = []
+
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+print(port)
+server.bind(("", port))
+server.listen()
+
+log_content(f"Listening on {sip}:{port}.", quiet, mlf)
 
 for k in range(len(args.fs)):
   dt = datetime.now(timezone.utc).strftime("%d/%m/%Y, %H:%M:%S")
   log_content(f"Filesystem {args.names[k]}, mounted at {args.fs[k]}, online at {dt} UTC.", quiet, mlf, args.logfiles[k+1])
+
+def authenticate(clientnum):
+  pass
+
+while True:
+  nclnm = len(client_ips)
+  (client, addr) = server.accept()
+  dt = datetime.now(timezone.utc).strftime("%d/%m/%Y, %H:%M:%S")
+  log_content(f"Connected by {addr[0]}:{addr[1]}.", quiet, mlf)
+  log_content(f"Client #{nclnm} connected to server at {dt}.", quiet, mlf)
+  client_ips.append(addr[0])
+  client_ports.append(addr[1])
+  client_uids.append(None)
+  t = threading.Thread(target=authenticate,args=[nclnm])
+  t.start()
