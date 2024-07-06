@@ -101,19 +101,18 @@ The client-server connection begins with a handshake which is used to verify tha
 - The client pings the server, including the UTC timestamp in the packet content.
 - The server responds with a pong, containing its UTC timestamp.
 
-If the server took too long to respond, the client may simply disconnect. Else:
+If the server took too long to respond, the client may simply disconnect without following the goodbye protocol. Else:
 
 - The client sends a packet of type `0x55`, containing a null-terminated string of the name of the GGNFS to connect to.
 
-If the server is not serving a filesystem with that name, it will respond with a packet of type `0xAA`.
+If the server is not serving a filesystem with that name, it will respond with a packet of type `0xAA`. Else, it sends `0x81`.
 
-Alternatively, the client sends a packet of type `0xF0` (a "list filesystems" request), to which the server responds with a packet of type `0x55` and containing a list of the filesystems it serves, after which the client then sends its filesystem request. Next, authentication is performed.
+Next, authentication is performed.
 
 To log in to their account:
 
 - The client sends a packet of type `0x55`, containing their username on that filesystem. N.b. the username/password data is stored separately to the filesystem image.
-- If that username exists, the server responds with a packet of type `0x81`, else `0xAA`, in which case the process repeats (or the user can disconnect following the disconnection protocol).
-- The server then sends a packet of type `0x55` containing the random salt data for that user included in the passwords file.
+- If that username exists, the server responds with a packet of type `0x81` containing the random salt data for that user in the passwords file, else `0xAA`, in which case the process repeats (or the user can disconnect following the disconnection protocol).
 - The client then sends a packet of type `0x55`, containing the hash of their password prepended by the random salt data.
 - The server compares that hash with the hash stored in the passwords file. If it matches, the server sends a packet of tpye `0x81`, else `0xAA`, in which case the client is prompted again.
 

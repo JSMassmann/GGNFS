@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime, timezone
+from hashlib import blake2b
 from logger import *
 import socket
 import threading
@@ -13,7 +14,7 @@ banner = """
   888   888  888   888   888   888   888            888
   `V88V"V8P' `V88V"V8P' o888o o888o o888o     `Y8bod8P'
         .8'        .8'
- `Y8P'  8P  `Y8P'  8P  COPYRIGHT 2024 JSMASSMANN ET AL
+ `Y8P'  8P  `Y8P'  8P  COPYRIGHT 2024 JSMASSMANN ET AL.
    `888""     `888""
 """
 
@@ -40,6 +41,59 @@ server.connect((ip, port))
 
 log_header("Successfully connected", False)
 
-log(banner, 36, 96, "", "", False)
+# Authenticating
+
+log_header("Authenticating", False)
+
+prelogin = 0
+
 while True:
-  pass
+  data = server.recv(1024)
+  if data == b"\x00":
+    # Server's welcomed us. Let's ping it.
+    n = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S").encode()
+    nlen = hex(len(n))[2:]
+    if len(nlen) % 2 == 1:
+      nlen = "0" + nlen
+    server.sendall(b"\x0f" + bytes.fromhex(nlen) + n)
+  if data and data[0] == 15:
+    le = data[1]
+    time = int(data[2:2+le].hex(),16)
+    print(f"\x1b[2;92mServer ping time: {time/1000:.3f} ms.")
+    if time > 350000:
+      print(f"This is a somewhat high ping time.\x1b[2;0m")
+      abort = getyn("Abort connection")
+      if abort == "y":
+        server.close()
+        sys.exit()
+    # Tell the server which FS we wanna do work on
+    server.sendall(b"\x55" + args.name.encode() + b"\x00")
+    log_content(f"Requested to access filesystem {args.name}.", False)
+  if data and data[0] == 129 and prelogin == 0:
+    yn = input(f"\x1b[0;38;5;219mUsername: \x1b[0m")
+    server.sendall(b"\x55" + yn.encode() + b"\x00")
+    prelogin = 1
+  elif data and data[0] == 129 and prelogin == 1:
+    salt = data[1:]
+    pwd = input(f"\x1b[0;38;5;213mPassword: \x1b[0m")
+    server.sendall(b"\x55" + blake2b(salt + pwd.encode()).digest())
+    prelogin = 2
+  elif data and data[0] == 129:
+    print(f"\x1b[0;38;5;115mSuccessfully logged in.\x1b[0m")
+    break
+  if data and data[0] == 170:
+    errmsg = b""
+    i = 1
+    while data[i] != 0:
+      a = hex(data[i])[2:]
+      if len(a) < 2:
+        a = "0"*(2-len(a)) + a
+      errmsg += bytes.fromhex(a)
+      i += 1
+    errmsg = errmsg.decode()
+    err(errmsg)
+
+log_header("Successfully authenticated", False)
+print("\n\n")
+
+log(banner, 36, 96, "", "", False)

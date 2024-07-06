@@ -9,3 +9,5 @@ This server utilizes heavy multithreading! We have n+m+1 threads, where n is the
 Therefore a server would be able to act upon, say, 100 filesystems for 100 concurrent clients. A server can handle up to 65,536 distinct users with custom read/write permissions for each.
 
 The client's interface is a simple shell which in the future may have scripting support.
+
+TODO: Encrypt all traffic.

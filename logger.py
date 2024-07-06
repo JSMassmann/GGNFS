@@ -12,7 +12,7 @@ def log(message, c1, c2, title, footer, quiet, *logfiles):
       print(f"\x1b[1;91mThe file {logfile} could not be opened.\x1b[0m")
       sys.exit(-1)
 
-def error(message, *logfiles):
+def err(message, *logfiles):
   log(message, 31, 91, "Error:", "", False, *logfiles)
   sys.exit(-1)
 
@@ -27,3 +27,14 @@ def log_header(message, quiet, *logfiles):
 
 def log_content(message, quiet, *logfiles):
   log(message, 36, 96, ">>>", "", quiet, *logfiles)
+
+# Auxiliary (non-logging stuff)
+
+def getyn(q):
+  while True:
+    choice = input(f"{q} (Y/N)? ").lower()
+    if choice not in ["y", "n"]:
+      log("That's not a valid choice.", 31, 91, "Error:", "", False)
+      continue
+    break
+  return choice
