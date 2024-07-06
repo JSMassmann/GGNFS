@@ -5,6 +5,12 @@ from pwdhandle import *
 import socket
 import threading
 
+# Randomly generated DH modulus
+
+MODULUS = 24232007666983577952695034427041601357329402128532980921601037889731103189552283667752389112051837994860205423175088441226102811700144050799450463184000420101612655873895340771876127405619453008312365136990515353706081962813294854868705997169587638642267042713103469556138077229083886143141698612784454972441680588042407408723801591049508556631676913672916808506009933285333509229147931256789339496872393608363869131201224717172482254928897456276422352920768198089835215468002598365697134318853502914174986190729889745180366854379870466192366962635685019245992382890477065628255705399888515034153165534724367769970243
+
+# Main program
+
 VERSION = "GGNFS Server Version 0.0"
 
 parser = argparse.ArgumentParser(prog = "ggnfs-server", description = "A server program for the GGNFS.", add_help = False)
@@ -60,11 +66,12 @@ log_header("All disk images correct", quiet, mlf)
 
 log_header("Initializing GGNFS server", quiet, mlf)
 
-client_sockets = []
-client_addrs = []
-client_uids = []
-client_fs = []
-client_yns = []
+client_sockets = [] # List of sockets for communicating with each client
+client_uids = [] # Each client's UID
+client_fs = [] # The filesystem each client is accessing
+client_yns = [] # Each client's username on their filesystem
+client_dhsecrets = [] # b's used in Diffie-Hellman key exchanges
+client_shsecrets = [] # g^ab's resulting from Diffie-Hellman key exchanges
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(("", port))
@@ -79,11 +86,9 @@ for k in range(len(args.fs)):
 log_header("Server initialized", quiet, mlf)
 log_header("Awaiting client requests", quiet, mlf)
 
-def authenticate(clientnum):
+def authenticate(clientnum: int) -> None:
   global client_sockets, client_uids, client_fs
   client = client_sockets[clientnum]
-  ip = client_addrs[clientnum][0]
-  port = client_addrs[clientnum][1]
 
   prelogin = 0
   
@@ -136,23 +141,46 @@ def authenticate(clientnum):
           client.sendall(b"\x81" + result[0])
           client_yns[clientnum] = req.encode()
           prelogin = 2
-    elif data and data[0] == 85:
+    elif data and data[0] == 85 and prelogin == 2:
       # This packet contains the hash of the user's password
       req = client_yns[clientnum]
       result = getdata(req, pwds[client_fs[clientnum]])
       if data[1:] == result[1]:
         client.sendall(b"\x81")
-        log_content(f"Client #{clientnum} successfully logged in to username {req.decode()}.", quiet, mlf)
+        log_content(f"Client #{clientnum} successfully logged in to username {req.decode()}. Their UID is {result[2]}.", quiet, mlf)
+        prelogin = 3
       else:
         client.sendall(b"\xaa" + f"That password is incorrect.".encode() + b"\x00")
         client.shutdown(socket.SHUT_RDWR)
         client.close()
         break
-def waitinput(clientnum):
+    elif data and data[0] == 85 and prelogin == 3:
+      # This packet contains a PR with which to perform Diffie-Hellman
+      # :3
+      G = int(data[1:].hex(), 16)
+      b = int.from_bytes(os.urandom(257), byteorder = "big")%MODULUS
+      log_content(f"Initiating a Diffie-Hellman key exchange with client #{clientnum}.", quiet, mlf)
+      B = pow(G, b, MODULUS)
+      B = hex(B)[2:]
+      if len(B) % 2 != 0:
+        B = "0" + B
+      B = bytes.fromhex(B)
+      client.sendall(b"\x55" + B)
+      client_dhsecrets[clientnum] = b
+      prelogin = 4
+    elif data and data[0] == 85:
+      # This packet contains a Diffie-Hellman g^a
+      A = int(data[1:].hex(), 16)
+      s = pow(A, client_dhsecrets[clientnum], MODULUS)
+      log_content(f"Key exchange with client #{clientnum} was successful.", quiet, mlf)
+      client_shsecrets[clientnum] = s
+      break
+
+def waitinput(clientnum: int) -> None:
   # Thread to read client requests and add these commands to respective journals
   pass
 
-def waitoutput(fsid):
+def waitoutput(fsid: int) -> None:
   # Thread to read from journals and perform the requested operations
   pass
 
@@ -164,9 +192,9 @@ while True:
   log_content(f"Connected by {addr[0]}:{addr[1]}.", quiet, mlf)
   log_content(f"Client #{nclnm} connected to server at {dt}.", quiet, mlf)
   client_sockets.append(client)
-  client_addrs.append(addr)
   client_uids.append(None)
   client_fs.append(None)
   client_yns.append(None)
+  client_dhsecrets.append(None)
   t = threading.Thread(target=authenticate,args=[nclnm])
   t.start()

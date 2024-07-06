@@ -10,4 +10,6 @@ Therefore a server would be able to act upon, say, 100 filesystems for 100 concu
 
 The client's interface is a simple shell which in the future may have scripting support.
 
+All traffic is encrypted, with Diffie-Hellman key exchange performed after authentication. We always use a precomputed modulus around `2.4232 * 10^29` as it is a hassle to generate safe primes on-the-fly and DH is not less secure when moduli are reused.
+
 TODO: Encrypt all traffic.

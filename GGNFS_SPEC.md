@@ -124,7 +124,9 @@ To create an account, a similar protocol to above is followed:
 - The client then sends a packet of type `0x55`, containing the hash of their password prepended by the random salt data.
 - The server stores the username, salt and hash in its passwords file.
 
-After a successful log-in or sign-up, the server stores the UID of that user (where UIDs are just generated in chronological user, i.e. the first non-superuser account to be created is 1). The client can then communicate requests it desires to make, where each request is simply a packet of type `0xF0` with second byte the operation type, followed by a packet of type `0x55` containing the operation data. 
+After a successful log-in or sign-up, the server stores the UID of that user (where UIDs are just generated in chronological user, i.e. the first non-superuser account to be created is 1). The client and server subsequently perform a Diffie-Hellman key exchange with a 2048-bit modulus and then derive an AES-256 key to encrypt all their subsequent traffic.
+
+The client can then communicate requests it desires to make, where each request is simply a packet of type `0xF0` with second byte the operation type, followed by a packet of type `0x55` containing the operation data. 
 
 The server checks if that UID has sufficient privileges and if there are no locks on the requested resource (e.g. another user is currently editing), and if not it adds it to its journal and another server thread will later perform it, after which the server sends an `0x81` or `0xAA`.
 
