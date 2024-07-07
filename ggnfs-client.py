@@ -1,4 +1,5 @@
 import argparse
+from crypto import *
 from datetime import datetime, timezone
 from hashlib import blake2b
 from logger import *
@@ -8,47 +9,7 @@ import threading
 
 # Cryptography
 
-MODULUS = 24232007666983577952695034427041601357329402128532980921601037889731103189552283667752389112051837994860205423175088441226102811700144050799450463184000420101612655873895340771876127405619453008312365136990515353706081962813294854868705997169587638642267042713103469556138077229083886143141698612784454972441680588042407408723801591049508556631676913672916808506009933285333509229147931256789339496872393608363869131201224717172482254928897456276422352920768198089835215468002598365697134318853502914174986190729889745180366854379870466192366962635685019245992382890477065628255705399888515034153165534724367769970243
-
 dh_shsecret = None
-
-def isprime(n: int) -> bool: # Miller-Rabin test for primality of n.
-  numbits = len(bin(n))-2
-  if n == 2: return True
-  if n % 2 == 0: return False
-  r = 0
-  s = n - 1
-  while s % 2 == 0:
-    r += 1
-    s //= 2
-  for j in range(128):
-    a = (int.from_bytes(os.urandom(numbits), byteorder = "big")%(n-2))+2
-    x = pow(a,s,n)
-    if x == 1 or x == n-1:
-      continue
-    for j in range(r - 1):
-      x = pow(x, 2, n)
-      if x == n - 1:
-        break
-    else:
-      return False
-  return True
-
-def issafe(p: int):
-  return isprime(p) and isprime((p-1)//2)
-
-def getPR(p: int):
-  # Function for finding a primitive root mod a safe prime p.
-  if not issafe(p):
-    return None
-  # We randomly test integers < p to see if they're primitive roots mod p; the probability is c. 1-1/q so we'll only need a few attempts.
-  q = (p-1)//2
-  while True:
-    numbits = len(bin(p))-2
-    u = (int.from_bytes(os.urandom(numbits), byteorder = "big")%(p-2))+2
-    g = pow(u,int((p-1)/q),p)
-    if g > 1: return g
-
 currentPR = None
 
 # Main program
@@ -129,6 +90,12 @@ while True:
     server.sendall(b"\x55" + A)
     B = int(data[1:].hex(), 16)
     s = pow(B, a, MODULUS)
+    # Convert this into a usable AES-256 key
+    s = hex(s)[2:]
+    if len(s) < 512:
+      s = "0"*(512-len(s)) + s
+    s = bytes.fromhex(s)
+    s = kdf(s)
     dh_shsecret = s
     break
   if data and data[0] == 129 and prelogin == 0:
@@ -167,3 +134,63 @@ log_header("Successfully authenticated", False)
 print("\n\n")
 
 log(banner, 36, 96, "", "", False)
+
+cmds = {
+  "help": "Prints this menu or information about a specific command.",
+  "exit": "Closes the connection with the server.",
+  "info": "Prints information about a directory.",
+  "chattrs": "Changes attributes of a directory or file.",
+  "copy": "Copy a file to another directory.",
+  "link": "Creates a hard link to a directory or file.",
+  "list": "Lists the files in a directory, or prints information about a file.",
+  "move": "Renames a file and/or moves it to another directory.",
+  "touch": "Creates a file or updates an existing file's timestamps.",
+  "cat": "Appends the contents of one file to another.",
+  "read": "Prints the contents of a file or moves them to a local file.",
+  "mkdir": "Creates a directory.",
+  "delete": "Deletes a file or directory.",
+  "write": "Writes to a file or replaces its contents with a local file.",
+  "unlink": "Removes a hard link."
+}
+
+cmdargs = {
+  "help": "  command Optional. The command to display help for.",
+  "exit": "",
+  "info": "  dir The directory to print information about.",
+  "chattrs": "  path The directory or file to act on.\n  attr The attribute to modify.\n  val The new value of the attribute.",
+  "copy": "  source The path to the original file.\n  dest   The destination directory path and new file name.",
+  "link": "  source The path to the original file or directory.\n  dest The path and name of the link.",
+  "list": "  path The path to the file or directory.",
+  "move": "  source The path to the original file.\n  dest   The destination directory.",
+  "touch": "  file The file to touch.",
+  "cat": "  if The file to append from.\n  of The file to append to.",
+  "read": "  if The file to read.\n  of Optional, the local file to read to (stdout if unspecified).",
+  "mkdir": "  dir The path to the new directory and its name.",
+  "delete": "  path The path to the file or directory to be deleted.",
+  "write": "  of The file to write to.\n  if Optional, the local file to write from (stdin if unspecified).",
+  "unlink": "  path The path to the link which should be removed."
+}
+
+while True:
+  inp = input(f"{yn}@{args.name} $ ")
+  cmd = inp.split(" ")[0]
+  data = inp.split(" ")[1:]
+  if cmd == "help":
+    if data == []:
+      l = max([len(i) for i in cmds.keys()])
+      for i in sorted(cmds.keys()):
+          print(i.ljust(l), cmds[i])
+    elif data[0] in cmds:
+      binfo = f"{data[0]}\n\n{cmds[data[0]]}"
+      if cmdargs[data[0]] == "":
+        print(binfo)
+      else:
+          print(binfo+f"\n\nArguments:\n{cmdargs[data[0]]}")
+    else:
+      warn(f"The command {data[0]} does not exist.", False)
+  elif cmd == "exit":
+    print("\x1b[0;38;5;98mClosing connection.\x1b[0m")
+    break
+
+server.shutdown(socket.SHUT_RDWR)
+server.close()

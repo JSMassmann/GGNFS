@@ -1,13 +1,10 @@
 import argparse
+from crypto import *
 from datetime import datetime, timezone
 from logger import *
 from pwdhandle import *
 import socket
 import threading
-
-# Randomly generated DH modulus
-
-MODULUS = 24232007666983577952695034427041601357329402128532980921601037889731103189552283667752389112051837994860205423175088441226102811700144050799450463184000420101612655873895340771876127405619453008312365136990515353706081962813294854868705997169587638642267042713103469556138077229083886143141698612784454972441680588042407408723801591049508556631676913672916808506009933285333509229147931256789339496872393608363869131201224717172482254928897456276422352920768198089835215468002598365697134318853502914174986190729889745180366854379870466192366962635685019245992382890477065628255705399888515034153165534724367769970243
 
 # Main program
 
@@ -72,6 +69,8 @@ client_fs = [] # The filesystem each client is accessing
 client_yns = [] # Each client's username on their filesystem
 client_dhsecrets = [] # b's used in Diffie-Hellman key exchanges
 client_shsecrets = [] # g^ab's resulting from Diffie-Hellman key exchanges
+
+active_fs = [] # Filesystems which are being accessed by a client
 
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(("", port))
@@ -148,6 +147,7 @@ def authenticate(clientnum: int) -> None:
       if data[1:] == result[1]:
         client.sendall(b"\x81")
         log_content(f"Client #{clientnum} successfully logged in to username {req.decode()}. Their UID is {result[2]}.", quiet, mlf)
+        client_uids[clientnum] = result[2]
         prelogin = 3
       else:
         client.sendall(b"\xaa" + f"That password is incorrect.".encode() + b"\x00")
@@ -172,17 +172,34 @@ def authenticate(clientnum: int) -> None:
       # This packet contains a Diffie-Hellman g^a
       A = int(data[1:].hex(), 16)
       s = pow(A, client_dhsecrets[clientnum], MODULUS)
-      log_content(f"Key exchange with client #{clientnum} was successful.", quiet, mlf)
+      # Convert this into a usable AES-256 key
+      s = hex(s)[2:]
+      if len(s) < 512:
+        s = "0"*(512-len(s)) + s
+      s = bytes.fromhex(s)
+      s = kdf(s)
       client_shsecrets[clientnum] = s
+      log_content(f"Key exchange with client #{clientnum} was successful.", quiet, mlf)
       break
+
+  t1 = threading.Thread(target=waitinput,args=[clientnum])
+  t1.start()
+  if client_fs[clientnum] not in active_fs:
+    active_fs.append(client_fs[clientnum])
+    t2 = threading.Thread(target=waitoutput,args=[client_fs[clientnum]])
+    t2.start()
 
 def waitinput(clientnum: int) -> None:
   # Thread to read client requests and add these commands to respective journals
-  pass
+  log_content(f"Reading requests from client #{clientnum}.", quiet, mlf)
+  while True:
+    pass
 
 def waitoutput(fsid: int) -> None:
   # Thread to read from journals and perform the requested operations
-  pass
+  log_content(f"Performing requests on filesystem {names[fsid]}.", quiet, mlf)
+  while True:
+    pass
 
 while True:
   # Main thread, awaiting client connections and authenticating
@@ -196,5 +213,6 @@ while True:
   client_fs.append(None)
   client_yns.append(None)
   client_dhsecrets.append(None)
+  client_shsecrets.append(None)
   t = threading.Thread(target=authenticate,args=[nclnm])
   t.start()
